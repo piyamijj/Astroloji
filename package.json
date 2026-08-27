@@ -1,0 +1,34 @@
+{
+  "name": "vedik-dogum-haritasi",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Doğum tarihi, saati ve lokasyonuna göre astronomik olarak doğru Vedik (Jyotish) D1 Rasi (Doğum) Haritasını Kuzey Hindistan (Kuzey Hint) baklava/elmas formatında çizen Next.js web uygulaması.",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "swisseph": "0.5.17",
+    "luxon": "3.4.4"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5",
+    "@types/node": "20.12.7",
+    "@types/react": "18.2.79",
+    "@types/react-dom": "18.2.25",
+    "@types/luxon": "3.4.2",
+    "tailwindcss": "3.4.3",
+    "postcss": "8.4.38",
+    "autoprefixer": "10.4.19",
+    "eslint": "8.57.0",
+    "eslint-config-next": "14.2.5"
+  }
+}
