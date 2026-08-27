@@ -17,10 +17,169 @@ import {
 import { lahiriAyanamsaApprox } from "./ayanamsa";
 
 /**
+ * Türkçe küçük harfli ülke adlarını Open-Meteo'nun daha iyi tanıdığı
+ * İngilizce/orijinal karşılıklarına çevirmek için kullanılan küçük bir
+ * eşleme tablosu. Kapsamlı bir liste değildir; en sık karşılaşılan
+ * ülkeleri kapsar ve gerektiğinde genişletilebilir.
+ */
+const TR_COUNTRY_NAME_MAP: Record<string, string> = {
+  almanya: "Germany",
+  fransa: "France",
+  ingiltere: "United Kingdom",
+  "i̇ngiltere": "United Kingdom",
+  "birleşik krallık": "United Kingdom",
+  italya: "Italy",
+  "i̇talya": "Italy",
+  ispanya: "Spain",
+  hollanda: "Netherlands",
+  belçika: "Belgium",
+  avusturya: "Austria",
+  isviçre: "Switzerland",
+  portekiz: "Portugal",
+  yunanistan: "Greece",
+  rusya: "Russia",
+  amerika: "United States",
+  abd: "United States",
+  kanada: "Canada",
+  japonya: "Japan",
+  çin: "China",
+  hindistan: "India",
+  polonya: "Poland",
+  çekya: "Czechia",
+  macaristan: "Hungary",
+  romanya: "Romania",
+  bulgaristan: "Bulgaria",
+  ukrayna: "Ukraine",
+  i̇sveç: "Sweden",
+  isveç: "Sweden",
+  norveç: "Norway",
+  danimarka: "Denmark",
+  finlandiya: "Finland",
+  irlanda: "Ireland",
+  avustralya: "Australia",
+  brezilya: "Brazil",
+  meksika: "Mexico",
+  mısır: "Egypt",
+  "suudi arabistan": "Saudi Arabia",
+  "birleşik arap emirlikleri": "United Arab Emirates",
+  azerbaycan: "Azerbaijan",
+  gürcistan: "Georgia",
+  iran: "Iran",
+  "i̇ran": "Iran",
+};
+
+/**
+ * Kullanıcının girdiği ham şehir metninden, Open-Meteo Geocoding API'sine
+ * sırayla denenecek aday sorgu listesini üretir. Amaç, "Bamberg almanya"
+ * gibi şehir+ülke birleşik ve Türkçe küçük harfli ülke adı içeren
+ * girdilerin de doğru şekilde çözümlenebilmesidir.
+ */
+function buildGeocodeCandidates(rawCity: string): string[] {
+  const trimmed = rawCity.trim().replace(/\s+/g, " ");
+  const candidates: string[] = [trimmed];
+
+  const lookupCountry = (text: string): string | undefined =>
+    TR_COUNTRY_NAME_MAP[text.toLocaleLowerCase("tr")];
+
+  // 1) Virgülle ayrılmış biçim: "Bamberg, Almanya"
+  if (trimmed.includes(",")) {
+    const segments = trimmed
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const cityPart = segments[0];
+    const countryRaw = segments.slice(1).join(" ");
+    if (cityPart) {
+      candidates.push(cityPart);
+      const mappedCountry = lookupCountry(countryRaw);
+      if (mappedCountry) {
+        candidates.push(`${cityPart}, ${mappedCountry}`);
+      } else if (countryRaw) {
+        candidates.push(`${cityPart}, ${countryRaw}`);
+      }
+    }
+  }
+
+  // 2) Boşlukla ayrılmış biçim: "Bamberg almanya" (şehir + bitişik ülke adı)
+  const tokens = trimmed.split(" ").filter(Boolean);
+  if (tokens.length > 1) {
+    // Son tek kelime bir ülke adı mı? (ör. "... almanya")
+    const lastWord = tokens[tokens.length - 1];
+    const cityOnlyLastWord = tokens.slice(0, -1).join(" ");
+    const mappedLastWord = lookupCountry(lastWord);
+    if (mappedLastWord) {
+      candidates.push(cityOnlyLastWord);
+      candidates.push(`${cityOnlyLastWord}, ${mappedLastWord}`);
+    }
+
+    // Son iki kelime bir ülke adı mı? (ör. "... suudi arabistan")
+    if (tokens.length > 2) {
+      const lastTwoWords = tokens.slice(-2).join(" ");
+      const cityOnlyLastTwo = tokens.slice(0, -2).join(" ");
+      const mappedLastTwo = lookupCountry(lastTwoWords);
+      if (mappedLastTwo) {
+        candidates.push(cityOnlyLastTwo);
+        candidates.push(`${cityOnlyLastTwo}, ${mappedLastTwo}`);
+      }
+    }
+
+    // 3) Son çare: yalnızca ilk kelime (çoğu şehir adı tek kelimedir)
+    candidates.push(tokens[0]);
+  }
+
+  // Boş/duplike adayları temizle, sırayı koru
+  const seen = new Set<string>();
+  const uniqueCandidates: string[] = [];
+  for (const candidate of candidates) {
+    const key = candidate.toLocaleLowerCase("tr");
+    if (candidate.length > 0 && !seen.has(key)) {
+      seen.add(key);
+      uniqueCandidates.push(candidate);
+    }
+  }
+  return uniqueCandidates;
+}
+
+/**
+ * Open-Meteo Geocoding API'sine tek bir sorgu gönderir. Ağ/HTTP hatasında
+ * fırlatır; sonuç bulunamadığında (0 sonuç) `null` döner (hata fırlatmaz) —
+ * böylece çağıran kod farklı adaylarla tekrar deneyebilir.
+ */
+async function fetchGeocodeCandidate(query: string): Promise<any | null> {
+  const encodedCity = encodeURIComponent(query);
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodedCity}&count=1&language=tr&format=json`;
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    next: { revalidate: 86400 }, // 24 saat önbellekleme (Next.js için)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Geocoding servisi hata verdi (HTTP ${response.status}).`);
+  }
+
+  const data = await response.json();
+
+  if (!data.results || data.results.length === 0) {
+    return null;
+  }
+
+  return data.results[0];
+}
+
+/**
  * Verilen şehir adını ücretsiz Open-Meteo Geocoding API kullanarak
  * enlem, boylam, saat dilimi (IANA) ve tam yer adına çözümler.
  *
- * @param city Kullanıcının girdiği şehir adı (örn. "İstanbul" veya "Izmir")
+ * Dayanıklılık: kullanıcı "Bamberg almanya" gibi şehir+ülke birleşik ve/veya
+ * Türkçe küçük harfli ülke adı içeren bir metin girebilir; Open-Meteo bu tür
+ * birleşik metinleri doğrudan tek bir yer adı gibi arayıp bulamayabilir.
+ * Bu yüzden `buildGeocodeCandidates` ile birkaç alternatif sorgu üretilir
+ * (örn. sadece şehir kısmı, şehir + İngilizce ülke adı, sadece ilk kelime)
+ * ve ilk sonuç veren aday kullanılır.
+ *
+ * @param city Kullanıcının girdiği şehir adı (örn. "İstanbul", "Bamberg almanya")
  * @returns Çözümlenmiş konum bilgileri (ResolvedLocation)
  */
 export async function geocodeCity(city: string): Promise<ResolvedLocation> {
@@ -28,29 +187,22 @@ export async function geocodeCity(city: string): Promise<ResolvedLocation> {
     throw new Error("Lütfen geçerli bir şehir adı girin (en az 2 karakter).");
   }
 
-  const encodedCity = encodeURIComponent(city.trim());
-  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodedCity}&count=1&language=tr&format=json`;
+  const candidates = buildGeocodeCandidates(city);
 
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      next: { revalidate: 86400 }, // 24 saat önbellekleme (Next.js için)
-    });
+    let result: any | null = null;
 
-    if (!response.ok) {
-      throw new Error(`Geocoding servisi hata verdi (HTTP ${response.status}).`);
+    for (const candidate of candidates) {
+      result = await fetchGeocodeCandidate(candidate);
+      if (result) break;
     }
 
-    const data = await response.json();
-
-    if (!data.results || data.results.length === 0) {
+    if (!result) {
       throw new Error(
-        `"${city}" şehri bulunamadı. Lütfen yazımı kontrol edin veya daha büyük bir şehir adı deneyin.`
+        `"${city}" şehri bulunamadı. Lütfen yazımı kontrol edin veya daha büyük/bilinen bir şehir adı deneyin (ör. sadece şehir adı: "Bamberg").`
       );
     }
 
-    const result = data.results[0];
     const latitude = result.latitude;
     const longitude = result.longitude;
     // Open-Meteo bazen timezone döndürmeyebilir, bu durumda varsayılan UTC kabul edilir.
