@@ -87,7 +87,11 @@ async function callGroqWithFallback(messages: ChatMessage[]): Promise<string> {
           model: GROQ_MODEL,
           messages,
           temperature: 0.8,
-          max_tokens: 1200,
+          // Not: Türkçe, eklemeli (agglutinative) yapısı nedeniyle İngilizce'ye
+          // göre kelime başına daha fazla token tüketir; 250-400 kelimelik bir
+          // yanıtın yarıda kesilmemesi için üst sınır bilinçli olarak yüksek
+          // tutulmuştur.
+          max_tokens: 1800,
         }),
       });
 
