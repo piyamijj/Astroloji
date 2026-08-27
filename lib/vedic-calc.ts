@@ -76,7 +76,14 @@ const TR_COUNTRY_NAME_MAP: Record<string, string> = {
  */
 function buildGeocodeCandidates(rawCity: string): string[] {
   const trimmed = rawCity.trim().replace(/\s+/g, " ");
-  const candidates: string[] = [trimmed];
+
+  // ÖNCELİK SIRASI ÖNEMLİDİR: bir ülke ipucu tespit edilebiliyorsa, ülkeyle
+  // nitelenmiş adaylar (ör. "Bamberg, Germany") DAİMA salt şehir adından
+  // (ör. "Bamberg") ÖNCE denenmelidir. Aksi halde, dünyada aynı isimde
+  // birden fazla şehir olduğunda (ör. ABD'de de bir "Bamberg" vardır),
+  // ülke ipucu göz ardı edilip yanlış/alakasız şehir bulunabilir.
+  const qualifiedCandidates: string[] = [];
+  const fallbackCandidates: string[] = [trimmed];
 
   const lookupCountry = (text: string): string | undefined =>
     TR_COUNTRY_NAME_MAP[text.toLocaleLowerCase("tr")];
@@ -90,47 +97,49 @@ function buildGeocodeCandidates(rawCity: string): string[] {
     const cityPart = segments[0];
     const countryRaw = segments.slice(1).join(" ");
     if (cityPart) {
-      candidates.push(cityPart);
       const mappedCountry = lookupCountry(countryRaw);
       if (mappedCountry) {
-        candidates.push(`${cityPart}, ${mappedCountry}`);
+        qualifiedCandidates.push(`${cityPart}, ${mappedCountry}`);
       } else if (countryRaw) {
-        candidates.push(`${cityPart}, ${countryRaw}`);
+        qualifiedCandidates.push(`${cityPart}, ${countryRaw}`);
       }
+      fallbackCandidates.push(cityPart);
     }
   }
 
   // 2) Boşlukla ayrılmış biçim: "Bamberg almanya" (şehir + bitişik ülke adı)
   const tokens = trimmed.split(" ").filter(Boolean);
   if (tokens.length > 1) {
-    // Son tek kelime bir ülke adı mı? (ör. "... almanya")
-    const lastWord = tokens[tokens.length - 1];
-    const cityOnlyLastWord = tokens.slice(0, -1).join(" ");
-    const mappedLastWord = lookupCountry(lastWord);
-    if (mappedLastWord) {
-      candidates.push(cityOnlyLastWord);
-      candidates.push(`${cityOnlyLastWord}, ${mappedLastWord}`);
-    }
-
-    // Son iki kelime bir ülke adı mı? (ör. "... suudi arabistan")
+    // Son iki kelime bir ülke adı mı? (ör. "... suudi arabistan") — önce bunu dene,
+    // çünkü iki kelimelik ülke adları tek kelimelik olası eşleşmelerden daha spesifiktir.
     if (tokens.length > 2) {
       const lastTwoWords = tokens.slice(-2).join(" ");
       const cityOnlyLastTwo = tokens.slice(0, -2).join(" ");
       const mappedLastTwo = lookupCountry(lastTwoWords);
       if (mappedLastTwo) {
-        candidates.push(cityOnlyLastTwo);
-        candidates.push(`${cityOnlyLastTwo}, ${mappedLastTwo}`);
+        qualifiedCandidates.push(`${cityOnlyLastTwo}, ${mappedLastTwo}`);
+        fallbackCandidates.push(cityOnlyLastTwo);
       }
     }
 
+    // Son tek kelime bir ülke adı mı? (ör. "... almanya")
+    const lastWord = tokens[tokens.length - 1];
+    const cityOnlyLastWord = tokens.slice(0, -1).join(" ");
+    const mappedLastWord = lookupCountry(lastWord);
+    if (mappedLastWord) {
+      qualifiedCandidates.push(`${cityOnlyLastWord}, ${mappedLastWord}`);
+      fallbackCandidates.push(cityOnlyLastWord);
+    }
+
     // 3) Son çare: yalnızca ilk kelime (çoğu şehir adı tek kelimedir)
-    candidates.push(tokens[0]);
+    fallbackCandidates.push(tokens[0]);
   }
 
-  // Boş/duplike adayları temizle, sırayı koru
+  // Önce ülkeyle nitelenmiş adaylar, ardından salt şehir adı denemeleri.
+  // Boş/duplike adayları temizle, sırayı koru.
   const seen = new Set<string>();
   const uniqueCandidates: string[] = [];
-  for (const candidate of candidates) {
+  for (const candidate of [...qualifiedCandidates, ...fallbackCandidates]) {
     const key = candidate.toLocaleLowerCase("tr");
     if (candidate.length > 0 && !seen.has(key)) {
       seen.add(key);
