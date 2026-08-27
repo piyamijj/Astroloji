@@ -78,8 +78,15 @@ export interface ResolvedLocation {
   resolvedName: string;
 }
 
-/** Swiss Ephemeris hesaplamasının hangi efemeris moduyla yapıldığı. */
-export type CalculationMode = "moshier" | "swisseph-file";
+/**
+ * Hesaplamanın hangi efemeris motoru/moduyla yapıldığı:
+ * - "moshier": native Swiss Ephemeris (swisseph), gömülü Moshier yarı-analitik modu.
+ * - "swisseph-file": native Swiss Ephemeris (swisseph), indirilmiş .se1 veri dosyalarıyla.
+ * - "pure-js": native 'swisseph' bu ortamda yüklenemediği için devreye giren, tamamen
+ *   JavaScript ile yazılmış yedek motor ('circular-natal-horoscope-js' + yaklaşık
+ *   Lahiri ayanamsa düzeltmesi). Bkz. lib/ayanamsa.ts.
+ */
+export type CalculationMode = "moshier" | "swisseph-file" | "pure-js";
 
 /** /api/calculate uç noktasının başarılı yanıtı: eksiksiz doğum haritası verisi. */
 export interface ChartResult {

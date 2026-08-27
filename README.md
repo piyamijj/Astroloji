@@ -15,7 +15,7 @@ tablo halinde kullanıcıya sunulur.
 - **Framework:** Next.js 14 (App Router)
 - **Arayüz:** React 18 + Tailwind CSS (koyu/dark tema, modern ve sade tasarım)
 - **Backend / API:** Next.js Route Handlers (sunucu taraflı hesaplama)
-- **Astrolojik Hesaplama Motoru:** `swisseph` (Swiss Ephemeris Node.js sarmalayıcısı), Lahiri ayanamsa ile
+- **Astrolojik Hesaplama Motoru:** `swisseph` (Swiss Ephemeris Node.js sarmalayıcısı, opsiyonel native bağımlılık) — mevcutsa birincil motor; mevcut değilse (ör. Vercel) otomatik olarak saf JavaScript yedek motoru (`circular-natal-horoscope-js`) devreye girer. Ayanamsa her iki motorda da Lahiri'dir.
 - **Tarih/Saat Dilimi İşlemleri:** `luxon`
 - **Geocoding (Şehir → Enlem/Boylam/Saat Dilimi):** Open-Meteo Geocoding API (ücretsiz, API anahtarı gerektirmez)
 
@@ -36,9 +36,10 @@ vedik-dogum-haritasi/
 ├── lib/
 │   ├── astro-constants.ts      # Burç adları, gezegen meta verileri, derece→burç yardımcıları
 │   ├── astro-types.ts          # Paylaşılan TypeScript tipleri (ChartResult, PlanetPosition, vb.)
+│   ├── ayanamsa.ts             # Saf JS yedek motor için yaklaşık Lahiri ayanamsa formülü
 │   ├── chart-geometry.ts       # Kuzey Hindistan haritasının saf SVG geometri hesaplamaları
 │   ├── ephemeris-fallback-notu.md  # swisseph/Vercel uyumluluk notu ve saf JS alternatif planı
-│   └── vedic-calc.ts           # Geocoding + Swiss Ephemeris ile asıl doğum haritası hesaplaması
+│   └── vedic-calc.ts           # Geocoding + hesaplama (native swisseph veya otomatik saf JS yedek motoru)
 ├── types/
 │   └── swisseph.d.ts           # 'swisseph' native modülü için TypeScript tip bildirimi
 ├── .env.local.example          # Örnek ortam değişkeni dosyası (SWISSEPH_EPHE_PATH opsiyonel)
@@ -54,9 +55,12 @@ vedik-dogum-haritasi/
 ## Önemli Dosyaların İçeriği (Özet)
 
 - **`package.json`** — Tüm bağımlılıkları (Next.js 14.2.5, React 18.3.1,
-  `swisseph`, `luxon`) ve geliştirme bağımlılıklarını (TypeScript, Tailwind,
-  PostCSS, ESLint) sabit sürümlerle tanımlar; `dev`, `build`, `start`, `lint`
-  komut betiklerini içerir.
+  `luxon`, `circular-natal-horoscope-js`) tanımlar. `swisseph`, native
+  derleme bazı ortamlarda başarısız olabildiği için bilinçli olarak
+  `optionalDependencies` altındadır (kurulamazsa `npm install` yine de
+  başarıyla tamamlanır). Geliştirme bağımlılıkları (TypeScript, Tailwind,
+  PostCSS, ESLint) sabit sürümlerle tanımlıdır; `dev`, `build`, `start`,
+  `lint` komut betiklerini içerir.
 - **`tsconfig.json`** — Next.js App Router için standart, strict modda
   TypeScript yapılandırması; `@/*` yol takma adı proje köküne işaret eder.
 - **`next.config.mjs`** — `swisseph` native eklentisinin webpack tarafından
@@ -78,12 +82,15 @@ vedik-dogum-haritasi/
   sabitlenmiştir çünkü `swisseph` Edge Runtime'da çalışamaz.
 - **`lib/vedic-calc.ts`** — Projenin kalbi. Şehri Open-Meteo Geocoding API
   ile enlem/boylam/saat dilimine çevirir (`geocodeCity`), doğum anını
-  `luxon` ile doğru saat dilimine göre UTC'ye çevirir, Julian Günü'nü
-  hesaplar, Lahiri ayanamsa modunu ayarlar, `swisseph.swe_calc_ut` ile her
-  gezegenin sidereal boylamını, `swisseph.swe_houses_ex` ile sidereal
-  Yükseleni hesaplar, Ketu'yu Rahu + 180° olarak türetir ve whole-sign
-  (tüm burç) ev sistemine göre her gezegenin evini belirler
-  (`calculateVedicChart`).
+  `luxon` ile doğru saat dilimine göre çözümler. Ardından `require('swisseph')`
+  dener: başarılı olursa `swisseph.swe_calc_ut`/`swe_houses_ex` ile TAM
+  HASSASİYETLİ native hesaplama yapar (`calculateWithSwisseph`); başarısız
+  olursa (ör. Vercel) otomatik olarak `circular-natal-horoscope-js` +
+  yaklaşık Lahiri ayanamsa (`lib/ayanamsa.ts`) kullanan saf JS motoruna
+  geçer (`calculateWithPureJsFallback`). Her iki motor da Ketu'yu
+  Rahu + 180° olarak türetir ve whole-sign (tüm burç) ev sistemine göre
+  her gezegenin evini birebir aynı mantıkla belirler
+  (`calculateVedicChart` bu iki motoru seçip çağıran ana giriş noktasıdır).
 - **`lib/astro-constants.ts`** — 12 burcun Türkçe adları (`ZODIAC_SIGNS_TR`),
   her gezegen için görünen ad/kısaltma/Swiss Ephemeris sabit adı
   (`PLANET_META`), gezegen sırası (`PLANET_ORDER`) ve derece→burç dönüşüm
@@ -134,28 +141,47 @@ gerektirmez ve doğum haritası hesaplamaları için yeterli hassasiyeti
 (yay saniyesi mertebesinde) sağlar. Daha yüksek hassasiyet isterseniz Swiss
 Ephemeris `.se1` veri dosyalarını indirip yolunu bu değişkene yazabilirsiniz.
 
-## swisseph ve Vercel Uyumluluğu — ÖNEMLİ UYARI
+## swisseph ve Vercel Uyumluluğu — ÖNEMLİ UYARI (GERÇEK DENEYİMLE DOĞRULANDI)
 
-`swisseph`, native (C/C++ tabanlı) bir Node.js eklentisidir. Bu tür native
-modüller **her serverless ortamda sorunsuz çalışmayabilir**: Vercel'in
-AWS Lambda tabanlı çalışma zamanı ile yerel/derleme ortamı arasındaki
-mimari/glibc farkları, build önbelleğinin native modülleri atlaması veya
-salt-okunur dosya sistemi kısıtlamaları nedeniyle `swisseph` modülünün
-yüklenmesi bazen başarısız olabilir (örn. "Cannot find module" veya
-"invalid ELF header" türü hatalar).
+`swisseph`, native (C/C++ tabanlı) bir Node.js eklentisidir. Bu proje
+gerçekten Vercel'e deploy edilerek test edilmiş ve **Vercel'in build
+ortamında `swisseph`'in native derlemesi gerçekten başarısız olmuştur**:
+Vercel'in Node 24 build imajında Python 3.12+ kullanılmakta, ancak
+`node-gyp`'in dayandığı Python `distutils` modülü Python 3.12'de
+kaldırıldığından `npm install` adımı `ModuleNotFoundError: No module
+named 'distutils'` hatasıyla tamamen başarısız olmaktadır.
 
-Bu depodaki `lib/vedic-calc.ts`, `require('swisseph')` başarısız olursa
-kullanıcıya anlaşılır, Türkçe bir hata mesajı döndürecek şekilde
-`try/catch` ile korunmuştur; uygulama sessizce çökmez.
+**Bu proje bu sorunu otomatik olarak çözecek şekilde tasarlanmıştır:**
 
-**Eğer Vercel'de deploy sonrası `/api/calculate` çağrısı bu hatayı
-verirse:** saf JavaScript tabanlı bir alternatif efemeris motoruna
-(`circular-natal-horoscope-js`, içeride `astronomia` kullanır, native
-derleme gerektirmez) geçiş yapmanız gerekir. Bu geçişin nasıl yapılacağına
-dair ayrıntılı, adım adım teknik rehber **`lib/ephemeris-fallback-notu.md`**
-dosyasındadır — tropikal/sidereal fark, Lahiri ayanamsa düzeltmesi ve
-önerilen kod organizasyonu (bir `USE_PURE_JS_EPHEMERIS` ortam değişkeni ile
-iki motor arasında geçiş) orada detaylandırılmıştır.
+1. `swisseph`, `package.json` içinde `dependencies` yerine
+   **`optionalDependencies`** altında tanımlıdır. Bu sayede native derleme
+   başarısız olsa bile `npm install` bütün olarak BAŞARISIZ OLMAZ; npm
+   sadece bu paketi atlar ve kuruluma devam eder.
+2. `lib/vedic-calc.ts`, çalışma zamanında `require('swisseph')`'i dener.
+   Başarılı olursa (örn. yerel bilgisayarınızda, bir VPS'de veya Docker
+   içinde) **tam hassasiyetli native Swiss Ephemeris motoru** kullanılır.
+   Başarısız olursa (`swisseph` kurulu değilse/derlenemediyse, tıpkı
+   Vercel'de olduğu gibi) uygulama **otomatik olarak** saf JavaScript
+   tabanlı yedek motora (`circular-natal-horoscope-js` + yaklaşık Lahiri
+   ayanamsa düzeltmesi, bkz. `lib/ayanamsa.ts`) geçer — herhangi bir manuel
+   müdahale veya ayrı deploy adımı gerekmez.
+3. Hangi motorun kullanıldığı, API yanıtındaki `calculationMode` alanında
+   (`"moshier"`, `"swisseph-file"` veya `"pure-js"`) ve arayüzdeki özet
+   kartında bir rozet olarak şeffafça gösterilir.
+
+Yerel geliştirmede `swisseph` genelde sorunsuz derlenir (bu yüzden yerel
+`npm run dev` sırasında tam hassasiyetli motoru göreceksiniz); Vercel'de
+ise otomatik olarak saf JS motoru devreye girer. İsterseniz
+`FORCE_NATIVE_SWISSEPH=true` ortam değişkeniyle native motoru zorunlu
+kılıp (kurulu değilse net bir hata almayı) tercih edebilirsiniz.
+
+**Doğruluk notu:** Saf JS yedek motorunda gezegenlerin tropikal
+konumları hâlâ gerçek efemeris hesaplamasından gelir ve hassastır; tek
+yaklaşıklık, Lahiri ayanamsa değerinin doğrusal bir formülle (gerçek
+presesyon teorisi yerine) hesaplanmasıdır — bu da ~1 yay dakikası
+mertebesinde bir sapmaya yol açabilir. Ayrıntılı teknik açıklama için
+**`lib/ephemeris-fallback-notu.md`** ve **`lib/ayanamsa.ts`** dosyalarına
+bakın.
 
 ## GitHub'a Push Etme
 
@@ -201,9 +227,12 @@ git push -u origin main
    - `SWISSEPH_EPHE_PATH` — daha yüksek hassasiyetli Swiss Ephemeris veri
      dosyalarını kullanmak isterseniz (dosyaları repo içine gömüp yolunu
      buraya yazmanız gerekir; ayrıntı için `.env.local.example`'a bakın).
-   - `USE_PURE_JS_EPHEMERIS` — yalnızca yukarıdaki uyumluluk notunda
-     anlatılan saf JS alternatif motoru uyguladıysanız `true` olarak
-     eklenir.
+     Not: `swisseph` zaten Vercel'de derlenemediği için bu değişkenin
+     Vercel'de bir etkisi olmaz; saf JS yedek motor otomatik devreye girer.
+   - `FORCE_NATIVE_SWISSEPH` — `true` olarak eklerseniz, `swisseph` bu
+     ortamda yüklenemediğinde sessizce yedek motora geçmek yerine net bir
+     hata döner (yalnızca native motorun kesin olarak kullanıldığını
+     doğrulamak istediğiniz ortamlarda kullanın; Vercel'de önerilmez).
 5. **"Deploy"** butonuna tıklayın ve dağıtımın tamamlanmasını bekleyin.
 6. Dağıtım tamamlandığında verilen `https://<proje-adi>.vercel.app`
    adresini açıp formu doldurarak canlı ortamda test edin.

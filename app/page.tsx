@@ -167,6 +167,8 @@ export default function HomePage() {
                       <span className="rounded-full bg-amethyst-500/20 px-2 py-0.5 text-xs font-normal text-amethyst-400">
                         {chartResult.calculationMode === "swisseph-file"
                           ? "Swiss Ephemeris (dosya)"
+                          : chartResult.calculationMode === "pure-js"
+                          ? "Saf JS Motoru (yaklaşık ayanamsa)"
                           : "Moshier (yerleşik)"}
                       </span>
                     </p>
