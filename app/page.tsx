@@ -3,6 +3,7 @@
 import { useState } from "react";
 import AstroForm from "@/components/AstroForm";
 import ChartSvg from "@/components/ChartSvg";
+import Interpretation from "@/components/Interpretation";
 import type { ChartResult } from "@/lib/astro-types";
 
 /**
@@ -219,6 +220,10 @@ export default function HomePage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="flex justify-center">
+                <Interpretation data={chartResult} />
               </div>
 
               <p className="text-center text-xs text-slate-500">

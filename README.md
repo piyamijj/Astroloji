@@ -243,6 +243,27 @@ git push -u origin main
    Uyumluluğu** bölümünde anlatılan alternatif motora geçiş adımlarını
    uygulayın.
 
+## Detaylı Astrolojik Yorum Özelliği
+
+Sonuç sayfasında, gezegen tablosunun altında iki katmanlı bir yorum bölümü
+bulunur:
+
+1. **Statik sözlük tabanlı yorum** (`data/astrology-dictionary.ts` +
+   `components/Interpretation.tsx`) — internet/servis kesintisinden
+   etkilenmez, anında ve ücretsiz çalışır. Yükselen burcu, Ay burcu x Ay evi
+   ve Güneş burcu x Mars burcu kombinasyonlarına göre bileşimsel (iki temel
+   metnin birleştirilmesiyle) Türkçe yorum üretir.
+2. **Yapay zeka destekli zengin yorum** (`app/api/interpret/route.ts`) —
+   "Yapay Zeka ile Detaylı Yorum Al" butonuna tıklandığında, tüm harita
+   Groq'un (`openai/gpt-oss-120b` modeli) OpenAI-uyumlu Chat Completions
+   API'sine gönderilir ve kişiselleştirilmiş, daha kapsamlı bir Türkçe yorum
+   üretilir. Bu özellik `GROQ_API_KEY_1` .. `GROQ_API_KEY_4` ortam
+   değişkenlerinin tanımlı olmasını gerektirir (bkz. `.env.local.example`);
+   dört ücretsiz anahtar arasında dönüşümlü/otomatik yedekli geçiş yaparak
+   hız sınırlarına karşı dayanıklıdır. Bu anahtarlar tanımlı değilse yalnızca
+   AI butonu Türkçe bir hata mesajı gösterir, uygulamanın geri kalanı
+   etkilenmez.
+
 ## Vedik Astroloji Hesaplama Notları
 
 - **Ayanamsa:** Kesinlikle **Lahiri (Chitra Paksha)** ayanamsa kullanılır;
